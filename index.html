@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>연애적 팀 전투 (TFT: 솔로지옥 아레나 v5.0)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel Standalone (브라우저 내 JSX 실시간 컴파일) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #070913;
+      color: #f8fafc;
+      overflow-x: hidden;
+      user-select: none;
+    }
+    /* 오프셋 육각형 타일 클립패스 */
+    .hex-tile {
+      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    }
+    /* 3D 결투장 원근감 컨테이너 */
+    .arena-perspective {
+      perspective: 1100px;
+    }
+    .arena-board {
+      transform: rotateX(24deg);
+      transform-style: preserve-3d;
+      transition: background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease;
+    }
+    /* 꽃잎/반딧불이 애니메이션 */
+    @keyframes float-particle {
+      0% { transform: translateY(-10px) translateX(0px) rotate(0deg); opacity: 0; }
+      20% { opacity: 0.85; }
+      80% { opacity: 0.85; }
+      100% { transform: translateY(380px) translateX(60px) rotate(360deg); opacity: 0; }
+    }
+    .particle-anim {
+      animation: float-particle 7s infinite linear;
+    }
+    @keyframes pop-bounce {
+      0%, 100% { transform: translateY(0px) scale(1); }
+      50% { transform: translateY(-6px) scale(1.06); }
+    }
+    .unit-bounce {
+      animation: pop-bounce 2.2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    // ---------------------------------------------------------
+    // 1. 시너지(특성) 데이터 정의
+    // ---------------------------------------------------------
+    const SYNERGIES = {
+      mosol: {
+        id: 'mosol',
+        name: '모태솔로',
+        icon: '🧙‍♂️',
+        color: 'from-purple-600 to-indigo-900',
+        badgeBg: 'bg-purple-950/90 border-purple-400 text-purple-200',
+        thresholds: [1, 2, 4],
+        desc: '[고독한 솔로] 주변 8칸에 아군이 없으면 전투 시작 시 최대 체력 비례 철벽 보호막 획득 & 5초 후 대마법사 각성(공격력 2배)'
+      },
+      celibate: {
+        id: 'celibate',
+        name: '독신주의',
+        icon: '📿',
+        color: 'from-amber-500 to-yellow-700',
+        badgeBg: 'bg-amber-950/90 border-amber-400 text-amber-200',
+        thresholds: [2, 3, 4],
+        desc: '[번뇌 소멸] 방어력 대폭 증가. 적의 공포 연애 질문("나 달라진 거 없어?" 등)을 해탈/신앙 멘트로 100% 무효화하고 체력 회복!'
+      },
+      flirt: {
+        id: 'flirt',
+        name: '어장관리',
+        icon: '🦊',
+        color: 'from-pink-500 to-rose-700',
+        badgeBg: 'bg-pink-950/90 border-pink-400 text-pink-200',
+        thresholds: [2, 3, 4],
+        desc: '[밀당의 신] 평타 시 적의 마나를 훔쳐오고, 일정 확률로 카톡 안읽씹(회피) 발동'
+      },
+      straight: {
+        id: 'straight',
+        name: '직진남녀',
+        icon: '🚀',
+        color: 'from-orange-500 to-red-700',
+        badgeBg: 'bg-orange-950/90 border-orange-400 text-orange-200',
+        thresholds: [2, 3, 4],
+        desc: '[노빠꾸 돌격] 전투 시작 시 맞은편 적 최후방 뒷라인으로 점프하여 암살 시작'
+      },
+      pure: {
+        id: 'pure',
+        name: '순애보',
+        icon: '🛡️',
+        color: 'from-emerald-500 to-teal-700',
+        badgeBg: 'bg-emerald-950/90 border-emerald-400 text-emerald-200',
+        thresholds: [2, 3, 4],
+        desc: '[헌신] 전투 시작 시 자신과 좌우 인접한 아군에게 든든한 순애 보호막 부여'
+      },
+      mbti_t: {
+        id: 'mbti_t',
+        name: '극T (팩폭러)',
+        icon: '🤖',
+        color: 'from-cyan-500 to-blue-700',
+        badgeBg: 'bg-cyan-950/90 border-cyan-400 text-cyan-200',
+        thresholds: [2, 3, 4],
+        desc: '[감정 배제] 모든 공격과 스킬에 방어력을 무시하는 팩트 고정 피해 추가'
+      },
+      mbti_f: {
+        id: 'mbti_f',
+        name: '극F (공감러)',
+        icon: '💧',
+        color: 'from-sky-400 to-indigo-600',
+        badgeBg: 'bg-sky-950/90 border-sky-400 text-sky-200',
+        thresholds: [2, 3, 4],
+        desc: '[폭풍 눈물] 스킬 발동 시 체력이 가장 낮은 아군을 치유하고 공격 속도 증가'
+      }
+    };
+
+    // ---------------------------------------------------------
+    // 2. 기물(챔피언) 18종 로스터 정의
+    // ---------------------------------------------------------
+    const CHAMPIONS = [
+      // 1코스트
+      { id: 'c1', name: '비혼 선언러', cost: 1, emoji: '🥂', traits: ['celibate', 'mbti_t'], hp: 700, atk: 45, range: 1, maxMana: 70, skillName: '축의금 회수', quote: '축의금 회수 완료! 나는 나랑 결혼함!', role: '해탈 탱커' },
+      { id: 'c2', name: '상상연애 전문가', cost: 1, emoji: '📱', traits: ['mosol', 'mbti_f'], hp: 520, atk: 55, range: 3, maxMana: 60, skillName: '연애 유튜브 정주행', quote: '이론상 지금 고백 타이밍인데?!', role: '원거리 딜러' },
+      { id: 'c3', name: '연하 직진남', cost: 1, emoji: '🐶', traits: ['straight', 'pure'], hp: 620, atk: 60, range: 1, maxMana: 60, skillName: '누나 나 죽어!', quote: '누나 오늘 시간 있어요?! 직진합니다!', role: '돌격 전사' },
+      { id: 'c4', name: '읽씹 장인', cost: 1, emoji: '👻', traits: ['flirt', 'mbti_t'], hp: 500, atk: 58, range: 3, maxMana: 65, skillName: '카톡 1 안 사라지기', quote: '(메시지를 읽지 않고 스토리만 올렸습니다)', role: '원거리 교란' },
+      // 2코스트
+      { id: 'c5', name: '산속의 스님', cost: 2, emoji: '🧘‍♂️', traits: ['celibate', 'pure'], hp: 950, atk: 50, range: 1, maxMana: 75, skillName: '무소유 목탁 타격', quote: '오호 통재라... 이 또한 지나가리라 (딱!)', role: '절대방어 탱커' },
+      { id: 'c6', name: '프로 답정너', cost: 2, emoji: '😤', traits: ['flirt', 'mbti_f'], hp: 650, atk: 68, range: 2, maxMana: 70, skillName: '나 살찐 것 같지?', quote: '나 요즘 살찐 것 같지? 솔직하게 말해봐!!', isQuestionSkill: true, role: '질문 폭격기' },
+      { id: 'c7', name: '철벽의 모솔녀', cost: 2, emoji: '🧱', traits: ['mosol', 'pure'], hp: 880, atk: 55, range: 1, maxMana: 80, skillName: '눈치 제로 철벽', quote: '아~ 그냥 길 물어보신 거구나! (철벽 쾅!)', role: '고독 탱커' },
+      { id: 'c8', name: '로봇 팩폭기', cost: 2, emoji: '🤖', traits: ['mbti_t', 'straight'], hp: 640, atk: 75, range: 3, maxMana: 65, skillName: '감정 배제 팩트폭격', quote: '울지 말고 말해봐. 그래서 결론이 뭔데?', role: '고정딜 저격수' },
+      // 3코스트
+      { id: 'c9', name: '고해성사 신부님', cost: 3, emoji: '✝️', traits: ['celibate', 'mbti_f'], hp: 1150, atk: 60, range: 1, maxMana: 80, skillName: '양다리 회개 성수', quote: '형제여, 어장관리한 죄를 사하노라...', role: '성기사 탱커/힐러' },
+      { id: 'c10', name: '프로 질문러 여친', cost: 3, emoji: '💇‍♀️', traits: ['flirt', 'mbti_f'], hp: 720, atk: 88, range: 3, maxMana: 70, skillName: '오빠 나 달라진 거 없어?', quote: '오빠... 나 오늘 뭐 달라진 거 없어? 😊💢', isQuestionSkill: true, role: '멘탈 분쇄 딜러' },
+      { id: 'c11', name: '확신 강요러', cost: 3, emoji: '🚨', traits: ['straight', 'mbti_t'], hp: 820, atk: 85, range: 1, maxMana: 75, skillName: '우리 무슨 사이야?', quote: '그래서 우리 지금 무슨 사이인데?! 대답해!', isQuestionSkill: true, role: '침묵 암살자' },
+      { id: 'c12', name: '연애 훈수꾼', cost: 3, emoji: '🧐', traits: ['mosol', 'mbti_t'], hp: 700, atk: 82, range: 3, maxMana: 70, skillName: '방구석 연애학개론', quote: '님들 그거 100% 가스라이팅임! 당장 헤어지셈!', role: '고독 명사수' },
+      // 4코스트
+      { id: 'c13', name: '골드미스 앤 미스터', cost: 4, emoji: '💎', traits: ['celibate', 'straight'], hp: 1350, atk: 95, range: 1, maxMana: 80, skillName: '내 명의 펜트하우스', quote: '연애할 시간에 내 명의 아파트 한 채 더 산다!', role: '자본주의 딜탱' },
+      { id: 'c14', name: '새벽감성 구남친', cost: 4, emoji: '🍺', traits: ['flirt', 'pure'], hp: 880, atk: 105, range: 3, maxMana: 75, skillName: '새벽 2시 "자니...?"', quote: '자니...? 그냥 네 생각이 나서... (광역 스턴)', role: '광역 멘탈폭격' },
+      { id: 'c15', name: '10년지기 남사친', cost: 4, emoji: '🌻', traits: ['pure', 'mbti_f'], hp: 1400, atk: 80, range: 1, maxMana: 85, skillName: '해바라기 순애 방패', quote: '네가 울면 나도 아파... 내가 다 막아줄게!', role: '수호 탱커' },
+      // 5코스트
+      { id: 'c16', name: '해탈한 주지스님', cost: 5, emoji: '☸️', traits: ['celibate', 'mosol'], hp: 1850, atk: 115, range: 1, maxMana: 85, skillName: '만트라 극락 결계', quote: '번뇌를 버려라! 솔로가 곧 극락이니라!! ☸️', role: '전설의 무소유 보스' },
+      { id: 'c17', name: '30년차 대마법사', cost: 5, emoji: '⚡', traits: ['mosol', 'mbti_t'], hp: 1150, atk: 150, range: 3, maxMana: 80, skillName: '솔로부대 메테오', quote: '30년 축적된 마력이여! 커플들을 심판하라!! ☄️', role: '결전 광역 마법사' },
+      { id: 'c18', name: '환승이별 마스터', cost: 5, emoji: '💔', traits: ['flirt', 'straight'], hp: 1100, atk: 145, range: 2, maxMana: 75, skillName: '미안 넌 좋은 사람인데', quote: '미안해... 넌 참 좋은 사람인데... (환승 처형!)', isQuestionSkill: true, role: '전설의 카사노바' }
+    ];
+
+    // ---------------------------------------------------------
+    // 3. 3D 결투장 스킨 테마 정의
+    // ---------------------------------------------------------
+    const ARENA_THEMES = {
+      park: {
+        id: 'park',
+        name: '🌸 벚꽃 데이트 공원',
+        boardBg: 'bg-gradient-to-b from-pink-950/85 via-emerald-950/90 to-slate-950',
+        borderCol: 'border-pink-400/50 shadow-[0_25px_70px_rgba(244,114,182,0.28)]',
+        tileAlly: 'bg-emerald-900/55 hover:bg-emerald-700/70 border-pink-300/30',
+        tileEnemy: 'bg-rose-950/50 border-rose-400/25',
+        riverText: '🌸 한강 벚꽃 산책로 & 사랑의 분수대 🌸',
+        particle: '🌸',
+        totemIcon: '🥂',
+        propsLeft: ['🌳', '⛲', '🌷'],
+        propsRight: ['🌸', '🪑', '🏮']
+      },
+      pocha: {
+        id: 'pocha',
+        name: '🍻 홍대 네온 포차거리',
+        boardBg: 'bg-gradient-to-b from-fuchsia-950/90 via-indigo-950/95 to-slate-950',
+        borderCol: 'border-cyan-400/50 shadow-[0_25px_70px_rgba(34,211,238,0.28)]',
+        tileAlly: 'bg-indigo-900/60 hover:bg-indigo-700/75 border-cyan-400/30',
+        tileEnemy: 'bg-purple-950/55 border-fuchsia-400/25',
+        riverText: '⚡ 홍대 헌팅포차 네온사인 골목 ⚡',
+        particle: '✨',
+        totemIcon: '🍺',
+        propsLeft: ['🏮', '🍻', '🎤'],
+        propsRight: ['🍸', '🚥', '🔥']
+      },
+      temple: {
+        id: 'temple',
+        name: '🏯 산속 해탈 사찰',
+        boardBg: 'bg-gradient-to-b from-amber-950/85 via-stone-900/95 to-slate-950',
+        borderCol: 'border-amber-400/60 shadow-[0_25px_70px_rgba(251,191,36,0.3)]',
+        tileAlly: 'bg-stone-800/70 hover:bg-amber-900/70 border-amber-400/35',
+        tileEnemy: 'bg-stone-900/70 border-orange-500/25',
+        riverText: '☸️ 속세단절 무소유 대웅전 마당 ☸️',
+        particle: '🍂',
+        totemIcon: '🪷',
+        propsLeft: ['🏯', '🪨', '🏮'],
+        propsRight: ['🌲', '🔔', '🕯️']
+      }
+    };
+
+    const COST_STYLES = {
+      1: { border: 'border-slate-400', bg: 'from-slate-700 to-slate-900', text: 'text-slate-200', ring: 'ring-slate-400' },
+      2: { border: 'border-emerald-400', bg: 'from-emerald-700 to-emerald-950', text: 'text-emerald-300', ring: 'ring-emerald-400' },
+      3: { border: 'border-sky-400', bg: 'from-sky-700 to-sky-950', text: 'text-sky-300', ring: 'ring-sky-400' },
+      4: { border: 'border-purple-400', bg: 'from-purple-700 to-purple-950', text: 'text-purple-300', ring: 'ring-purple-400' },
+      5: { border: 'border-amber-400', bg: 'from-amber-600 via-yellow-700 to-amber-950', text: 'text-amber-300', ring: 'ring-amber-400' }
+    };
+
+    // 스테이지별 적 프리셋
+    const ENEMY_WAVES = [
+      {
+        stage: '1-1', title: '신입생 환영회 어장단',
+        units: [
+          { champId: 'c4', star: 1, row: 0, col: 2 },
+          { champId: 'c6', star: 1, row: 1, col: 3 }
+        ]
+      },
+      {
+        stage: '1-2', title: '오빠 나 달라진 거 없어? 폭격단',
+        units: [
+          { champId: 'c3', star: 1, row: 1, col: 2 },
+          { champId: 'c6', star: 1, row: 1, col: 4 },
+          { champId: 'c10', star: 1, row: 0, col: 3 }
+        ]
+      },
+      {
+        stage: '1-3', title: '확신 강요 & 새벽 자니? 군단',
+        units: [
+          { champId: 'c11', star: 2, row: 1, col: 2 },
+          { champId: 'c10', star: 1, row: 0, col: 1 },
+          { champId: 'c14', star: 1, row: 0, col: 5 }
+        ]
+      },
+      {
+        stage: '2-1', title: '환승이별 카사노바 최종 보스',
+        units: [
+          { champId: 'c15', star: 2, row: 1, col: 3 },
+          { champId: 'c10', star: 2, row: 0, col: 1 },
+          { champId: 'c14', star: 2, row: 0, col: 5 },
+          { champId: 'c18', star: 2, row: 1, col: 4 }
+        ]
+      }
+    ];
+
+    // 유틸: 챔피언 인스턴스 생성
+    let uidCounter = 100;
+    function createUnitInstance(champId, star = 1) {
+      const base = CHAMPIONS.find(c => c.id === champId) || CHAMPIONS[0];
+      const mult = star === 1 ? 1 : star === 2 ? 1.75 : 3.1;
+      return {
+        uid: `u_${++uidCounter}_${Math.random().toString(36).slice(2, 6)}`,
+        champId: base.id,
+        name: base.name,
+        cost: base.cost,
+        emoji: base.emoji,
+        traits: base.traits,
+        star,
+        maxHp: Math.round(base.hp * mult),
+        hp: Math.round(base.hp * mult),
+        atk: Math.round(base.atk * mult),
+        range: base.range,
+        maxMana: base.maxMana,
+        mana: 0,
+        skillName: base.skillName,
+        quote: base.quote,
+        isQuestionSkill: !!base.isQuestionSkill,
+        role: base.role,
+        shield: 0,
+        bubble: null
+      };
+    }
+
+    // ---------------------------------------------------------
+    // 4. 메인 애플리케이션 컴포넌트
+    // ---------------------------------------------------------
+    function App() {
+      const [arenaKey, setArenaKey] = useState('park');
+      const arena = ARENA_THEMES[arenaKey];
+
+      // 게임 상태
+      const [waveIdx, setWaveIdx] = useState(0);
+      const [phase, setPhase] = useState('PREP'); // 'PREP' | 'COMBAT' | 'RESULT'
+      const [timer, setTimer] = useState(25);
+      const [playerHp, setPlayerHp] = useState(100);
+      const [gold, setGold] = useState(14);
+      const [level, setLevel] = useState(4);
+      const [xp, setXp] = useState(0);
+      const [streak, setStreak] = useState(0);
+      const [shopLocked, setShopLocked] = useState(false);
+
+      // 보드: 4행 x 7열 (행 0~1: 적 진영, 행 2~3: 내 진영)
+      const [boardUnits, setBoardUnits] = useState(() => [
+        { ...createUnitInstance('c5', 1), row: 2, col: 2, team: 'ally' }, // 산속의 스님
+        { ...createUnitInstance('c9', 1), row: 2, col: 4, team: 'ally' }, // 고해성사 신부님
+        { ...createUnitInstance('c12', 1), row: 3, col: 0, team: 'ally' } // 연애 훈수꾼 (고독 배치)
+      ]);
+      const [benchUnits, setBenchUnits] = useState(() => [
+        createUnitInstance('c1', 1),
+        createUnitInstance('c2', 1),
+        null, null, null, null, null, null, null
+      ]);
+
+      // 상점 5칸
+      const [shop, setShop] = useState([]);
+      const [selectedSource, setSelectedSource] = useState(null); // { type: 'board'|'bench', indexOrPos }
+      const [combatUnits, setCombatUnits] = useState([]);
+      const [combatLogs, setCombatLogs] = useState([]);
+      const [bannerMsg, setBannerMsg] = useState(null);
+      const [avatarQuote, setAvatarQuote] = useState('스님·신부님 앞줄에 세우고 모솔은 구석에 띄워보세요!');
+      const [showGuide, setShowGuide] = useState(false);
+
+      // 상점 새로고침 함수
+      const rollShop = (costGold = 0) => {
+        if (costGold > 0 && gold < costGold) return;
+        if (costGold > 0) setGold(g => g - costGold);
+        const maxCostAllowed = level <= 3 ? 3 : level <= 5 ? 4 : 5;
+        const pool = CHAMPIONS.filter(c => c.cost <= maxCostAllowed);
+        const nextShop = Array.from({ length: 5 }, () => {
+          const pick = pool[Math.floor(Math.random() * pool.length)];
+          return { ...pick, purchased: false };
+        });
+        setShop(nextShop);
+      };
+
+      useEffect(() => {
+        rollShop(0);
+      }, []);
+
+      // 3성 자동 합체 체크
+      const tryAutoCombine = (nextBoard, nextBench) => {
+        let merged = false;
+        const allMap = {};
+        nextBoard.forEach(u => {
+          const key = `${u.champId}_${u.star}`;
+          if (!allMap[key]) allMap[key] = [];
+          allMap[key].push({ loc: 'board', u });
+        });
+        nextBench.forEach((u, idx) => {
+          if (!u) return;
+          const key = `${u.champId}_${u.star}`;
+          if (!allMap[key]) allMap[key] = [];
+          allMap[key].push({ loc: 'bench', u, idx });
+        });
+
+        for (const key of Object.keys(allMap)) {
+          const list = allMap[key];
+          if (list.length >= 3) {
+            const targetStar = list[0].u.star + 1;
+            if (targetStar > 3) continue;
+            merged = true;
+            const champId = list[0].u.champId;
+            const firstBoard = list.find(item => item.loc === 'board');
+            const toRemoveUids = new Set(list.slice(0, 3).map(i => i.u.uid));
+
+            nextBoard = nextBoard.filter(u => !toRemoveUids.has(u.uid));
+            nextBench = nextBench.map(u => (u && toRemoveUids.has(u.uid) ? null : u));
+
+            const upgraded = createUnitInstance(champId, targetStar);
+            upgraded.bubble = `⭐${targetStar}성 합체!!`;
+
+            if (firstBoard) {
+              nextBoard.push({ ...upgraded, row: firstBoard.u.row, col: firstBoard.u.col, team: 'ally' });
+            } else {
+              const emptyIdx = nextBench.findIndex(x => x === null);
+              if (emptyIdx !== -1) nextBench[emptyIdx] = upgraded;
+            }
+            setAvatarQuote(`🎉 ${upgraded.name} ★${targetStar}성 합체 성공!!`);
+            break;
+          }
+        }
+        if (merged) {
+          return tryAutoCombine(nextBoard, nextBench);
+        }
+        return { nextBoard, nextBench };
+      };
+
+      // 활성 시너지 및 모솔 고독 판정 계산
+      const { activeSynergies, isolatedUids, hiddenComboActive } = useMemo(() => {
+        const traitMap = {};
+        const isoSet = new Set();
+
+        boardUnits.forEach(u => {
+          // 고유 챔피언 종류별 시너지 카운트
+          u.traits.forEach(t => {
+            if (!traitMap[t]) traitMap[t] = new Set();
+            traitMap[t].add(u.champId);
+          });
+          // 모솔 고독 체크 (주변 8칸 내 다른 아군 없는지 확인)
+          if (u.traits.includes('mosol')) {
+            const hasNeighbor = boardUnits.some(other =>
+              other.uid !== u.uid &&
+              Math.abs(other.row - u.row) <= 1 &&
+              Math.abs(other.col - u.col) <= 1
+            );
+            if (!hasNeighbor) isoSet.add(u.uid);
+          }
+        });
+
+        const counts = {};
+        Object.keys(SYNERGIES).forEach(k => {
+          counts[k] = traitMap[k] ? traitMap[k].size : 0;
+        });
+
+        const hidden = counts.mosol >= 1 && counts.celibate >= 2;
+        return { activeSynergies: counts, isolatedUids: isoSet, hiddenComboActive: hidden };
+      }, [boardUnits]);
+
+      // 준비 단계 타이머
+      useEffect(() => {
+        if (phase !== 'PREP') return;
+        const id = setInterval(() => {
+          setTimer(t => {
+            if (t <= 1) {
+              startCombat();
+              return 0;
+            }
+            return t - 1;
+          });
+        }, 1000);
+        return () => clearInterval(id);
+      }, [phase, boardUnits, benchUnits, waveIdx]);
+
+      // 단축키 지원 (D: 리롤, F: 경험치 구매, Space: 즉시 전투)
+      useEffect(() => {
+        const onKey = (e) => {
+          if (phase !== 'PREP') return;
+          if (e.key === 'd' || e.key === 'D') rollShop(2);
+          if (e.key === 'f' || e.key === 'F') buyXp();
+          if (e.code === 'Space') {
+            e.preventDefault();
+            startCombat();
+          }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [phase, gold, level, xp, boardUnits]);
+
+      // 경험치 구매 (레벨업)
+      const buyXp = () => {
+        if (gold < 4 || level >= 8) return;
+        setGold(g => g - 4);
+        const nextXp = xp + 4;
+        const need = level * 4;
+        if (nextXp >= need) {
+          setLevel(l => l + 1);
+          setXp(nextXp - need);
+          setAvatarQuote(`연애세포 레벨 UP! 이제 전장에 최대 ${level + 1}명 배치 가능!`);
+        } else {
+          setXp(nextXp);
+        }
+      };
+
+      // 상점 기물 구매
+      const buyChampion = (idx) => {
+        if (phase !== 'PREP') return;
+        const item = shop[idx];
+        if (!item || item.purchased || gold < item.cost) return;
+
+        const emptyBenchIdx = benchUnits.findIndex(b => b === null);
+        if (emptyBenchIdx === -1) {
+          setAvatarQuote('대기석(벤치)이 꽉 찼습니다! 기물을 배치하거나 판매하세요.');
+          return;
+        }
+
+        setGold(g => g - item.cost);
+        const nextShop = [...shop];
+        nextShop[idx] = { ...item, purchased: true };
+        setShop(nextShop);
+
+        const newUnit = createUnitInstance(item.id, 1);
+        const rawBench = [...benchUnits];
+        rawBench[emptyBenchIdx] = newUnit;
+
+        const { nextBoard, nextBench } = tryAutoCombine([...boardUnits], rawBench);
+        setBoardUnits(nextBoard);
+        setBenchUnits(nextBench);
+      };
+
+      // 선택된 기물 판매
+      const sellSelectedUnit = () => {
+        if (!selectedSource || phase !== 'PREP') return;
+        if (selectedSource.type === 'board') {
+          const target = boardUnits.find(u => u.uid === selectedSource.uid);
+          if (!target) return;
+          const refund = target.cost * target.star;
+          setGold(g => g + refund);
+          setBoardUnits(prev => prev.filter(u => u.uid !== target.uid));
+        } else if (selectedSource.type === 'bench') {
+          const target = benchUnits[selectedSource.index];
+          if (!target) return;
+          const refund = target.cost * target.star;
+          setGold(g => g + refund);
+          setBenchUnits(prev => prev.map((u, i) => (i === selectedSource.index ? null : u)));
+        }
+        setSelectedSource(null);
+      };
+
+      // 타일 클릭 이동/교체
+      const handleTileClick = (row, col) => {
+        if (phase !== 'PREP') return;
+        if (row < 2) return; // 적 진영 배치 불가
+
+        const existingOnTile = boardUnits.find(u => u.row === row && u.col === col);
+
+        if (!selectedSource) {
+          if (existingOnTile) {
+            setSelectedSource({ type: 'board', uid: existingOnTile.uid, row, col });
+          }
+          return;
+        }
+
+        // 보드 -> 보드 이동/교체
+        if (selectedSource.type === 'board') {
+          const movingUnit = boardUnits.find(u => u.uid === selectedSource.uid);
+          if (!movingUnit) {
+            setSelectedSource(null);
+            return;
+          }
+          if (existingOnTile && existingOnTile.uid === movingUnit.uid) {
+            setSelectedSource(null);
+            return;
+          }
+          setBoardUnits(prev =>
+            prev.map(u => {
+              if (u.uid === movingUnit.uid) return { ...u, row, col };
+              if (existingOnTile && u.uid === existingOnTile.uid) {
+                return { ...u, row: movingUnit.row, col: movingUnit.col };
+              }
+              return u;
+            })
+          );
+          setSelectedSource(null);
+        }
+        // 벤치 -> 보드 배치/교체
+        else if (selectedSource.type === 'bench') {
+          const benchUnit = benchUnits[selectedSource.index];
+          if (!benchUnit) {
+            setSelectedSource(null);
+            return;
+          }
+          if (!existingOnTile && boardUnits.length >= level) {
+            setAvatarQuote(`현재 레벨(${level}) 최대 인원 초과! 경험치를 구매해 레벨업하세요.`);
+            setSelectedSource(null);
+            return;
+          }
+          if (existingOnTile) {
+            // 스왑
+            setBoardUnits(prev =>
+              prev.map(u => (u.uid === existingOnTile.uid ? { ...benchUnit, row, col, team: 'ally' } : u))
+            );
+            setBenchUnits(prev => prev.map((u, i) => (i === selectedSource.index ? existingOnTile : u)));
+          } else {
+            setBoardUnits(prev => [...prev, { ...benchUnit, row, col, team: 'ally' }]);
+            setBenchUnits(prev => prev.map((u, i) => (i === selectedSource.index ? null : u)));
+          }
+          setSelectedSource(null);
+        }
+      };
+
+      // 벤치 슬롯 클릭
+      const handleBenchClick = (idx) => {
+        if (phase !== 'PREP') return;
+        const clickedUnit = benchUnits[idx];
+
+        if (!selectedSource) {
+          if (clickedUnit) setSelectedSource({ type: 'bench', index: idx, uid: clickedUnit.uid });
+          return;
+        }
+
+        if (selectedSource.type === 'bench') {
+          const fromIdx = selectedSource.index;
+          if (fromIdx === idx) {
+            setSelectedSource(null);
+            return;
+          }
+          const copy = [...benchUnits];
+          const temp = copy[fromIdx];
+          copy[fromIdx] = copy[idx];
+          copy[idx] = temp;
+          setBenchUnits(copy);
+          setSelectedSource(null);
+        } else if (selectedSource.type === 'board') {
+          const boardUnit = boardUnits.find(u => u.uid === selectedSource.uid);
+          if (!boardUnit) {
+            setSelectedSource(null);
+            return;
+          }
+          if (clickedUnit) {
+            setBoardUnits(prev =>
+              prev.map(u => (u.uid === boardUnit.uid ? { ...clickedUnit, row: boardUnit.row, col: boardUnit.col, team: 'ally' } : u))
+            );
+            setBenchUnits(prev => prev.map((u, i) => (i === idx ? { ...boardUnit } : u)));
+          } else {
+            setBoardUnits(prev => prev.filter(u => u.uid !== boardUnit.uid));
+            setBenchUnits(prev => prev.map((u, i) => (i === idx ? { ...boardUnit } : u)));
+          }
+          setSelectedSource(null);
+        }
+      };
+
+      // 원클릭 명장면 프리셋 세팅
+      const applyHighlightPreset = () => {
+        if (phase !== 'PREP') return;
+        const presetBoard = [
+          { ...createUnitInstance('c5', 2), row: 2, col: 2, team: 'ally' },  // 2성 산속의 스님
+          { ...createUnitInstance('c9', 2), row: 2, col: 4, team: 'ally' },  // 2성 고해성사 신부님
+          { ...createUnitInstance('c16', 1), row: 2, col: 3, team: 'ally' }, // 해탈한 주지스님
+          { ...createUnitInstance('c17', 2), row: 3, col: 0, team: 'ally' }  // 2성 30년차 대마법사 (고독 배치)
+        ];
+        setBoardUnits(presetBoard);
+        setWaveIdx(1); // "오빠 나 달라진 거 없어?" 폭격단 스테이지로 고정
+        setAvatarQuote('🔥 스님·신부님 철벽 + 모솔 대마법사 세팅 완료! [즉시 전투]를 눌러보세요!');
+      };
+
+      // 전투 시작
+      const startCombat = () => {
+        if (phase !== 'PREP') return;
+        setSelectedSource(null);
+
+        // 만약 보드에 기물이 하나도 없고 벤치에 있으면 1개 자동 투입
+        let currentAllies = [...boardUnits];
+        if (currentAllies.length === 0) {
+          const firstBenchIdx = benchUnits.findIndex(u => u !== null);
+          if (firstBenchIdx !== -1) {
+            const autoUnit = { ...benchUnits[firstBenchIdx], row: 2, col: 3, team: 'ally' };
+            currentAllies = [autoUnit];
+            setBoardUnits(currentAllies);
+            setBenchUnits(prev => prev.map((u, i) => (i === firstBenchIdx ? null : u)));
+          }
+        }
+
+        const wave = ENEMY_WAVES[waveIdx % ENEMY_WAVES.length];
+        const allies = currentAllies.map(u => {
+          const isIso = isolatedUids.has(u.uid);
+          const initShield =
+            (isIso ? Math.round(u.maxHp * 0.35) : 0) +
+            (activeSynergies.pure >= 2 ? 180 : 0);
+          // 직진 시너지 점프 처리
+          const startRow = u.traits.includes('straight') && activeSynergies.straight >= 2 ? 0 : u.row;
+          return {
+            ...u,
+            hp: u.maxHp,
+            mana: 0,
+            shield: initShield,
+            row: startRow,
+            team: 'ally',
+            isIsolatedMosol: isIso,
+            awakened: false,
+            bubble: isIso ? '👑고독 철벽!' : u.traits.includes('straight') && activeSynergies.straight >= 2 ? '🚀직진 돌격!' : null
+          };
+        });
+
+        const enemies = wave.units.map(eu => {
+          const inst = createUnitInstance(eu.champId, eu.star);
+          return {
+            ...inst,
+            row: eu.row,
+            col: eu.col,
+            team: 'enemy',
+            shield: 0,
+            bubble: null
+          };
+        });
+
+        setCombatUnits([...allies, ...enemies]);
+        setCombatLogs([`⚔️ [${wave.stage} ${wave.title}] 전투가 시작되었습니다!`]);
+        setPhase('COMBAT');
+      };
+
+      // 실시간 전투 틱 루프
+      useEffect(() => {
+        if (phase !== 'COMBAT') return;
+        let tickCount = 0;
+
+        const id = setInterval(() => {
+          tickCount += 1;
+          setCombatUnits(prev => {
+            const alive = prev.filter(u => u.hp > 0);
+            const allies = alive.filter(u => u.team === 'ally');
+            const enemies = alive.filter(u => u.team === 'enemy');
+
+            if (allies.length === 0 || enemies.length === 0) {
+              const isWin = allies.length > 0;
+              finishCombat(isWin, enemies.length);
+              return prev;
+            }
+
+            const next = alive.map(u => ({ ...u, bubble: tickCount % 3 === 0 ? null : u.bubble }));
+            const newLogs = [];
+
+            next.forEach(actor => {
+              if (actor.hp <= 0) return;
+
+              // 5틱 후 모솔 대마법사 각성
+              if (tickCount === 5 && actor.team === 'ally' && actor.isIsolatedMosol && !actor.awakened) {
+                actor.awakened = true;
+                actor.atk = Math.round(actor.atk * 1.9);
+                actor.bubble = '⚡대마법사 각성!!';
+                newLogs.push(`🧙‍♂️ [모솔 각성] ${actor.name}의 솔로 마력이 폭발해 공격력이 2배 증가합니다!`);
+              }
+
+              const foes = next.filter(f => f.team !== actor.team && f.hp > 0);
+              if (foes.length === 0) return;
+
+              // 가장 가까운 적 탐색
+              let target = foes[0];
+              let minDist = 999;
+              foes.forEach(f => {
+                const d = Math.abs(f.row - actor.row) + Math.abs(f.col - actor.col);
+                if (d < minDist) {
+                  minDist = d;
+                  target = f;
+                }
+              });
+
+              // 사거리 밖이면 1칸 이동
+              if (minDist > actor.range) {
+                const dRow = Math.sign(target.row - actor.row);
+                const dCol = Math.sign(target.col - actor.col);
+                const candRow = Math.max(0, Math.min(3, actor.row + dRow));
+                const candCol = Math.max(0, Math.min(6, actor.col + (dRow === 0 ? dCol : 0)));
+                const occupied = next.some(o => o.uid !== actor.uid && o.hp > 0 && o.row === candRow && o.col === candCol);
+                if (!occupied) {
+                  actor.row = candRow;
+                  actor.col = candCol;
+                }
+                return;
+              }
+
+              // 평타 및 마나 충전
+              actor.mana = Math.min(actor.maxMana, actor.mana + 25);
+
+              if (actor.mana >= actor.maxMana) {
+                actor.mana = 0;
+                actor.bubble = `💬 ${actor.quote}`;
+
+                // 공포의 연애 질문 스킬 vs 독신주의(스님·신부님·비혼러) 해탈 카운터 판정!
+                if (actor.isQuestionSkill && target.traits.includes('celibate')) {
+                  const healAmt = 160;
+                  target.hp = Math.min(target.maxHp, target.hp + healAmt);
+                  target.bubble =
+                    target.champId === 'c9'
+                      ? '✝️ 주님 안에선 어제나 오늘이나 똑같습니다 (피해 0!)'
+                      : '📿 시주님, 머리카락도 인연도 본래 공(空)하거늘! (해탈 반사!)';
+                  newLogs.push(`📿 [해탈 카운터!] ${target.name}이(가) "${actor.skillName}" 질문을 속세 초월 멘트로 완벽 무효화하고 체력을 +${healAmt} 회복했습니다!`);
+                  return;
+                }
+
+                // 모솔/극T가 질문 스킬 맞으면 오답 크리티컬
+                let skillDmg = Math.round(actor.atk * 2.2);
+                if (actor.isQuestionSkill && (target.traits.includes('mosol') || target.traits.includes('mbti_t'))) {
+                  skillDmg = Math.round(actor.atk * 2.9);
+                  target.bubble = '😳 어...? 어제랑 똑같은 옷 아니야?! (오답 크리!)';
+                  newLogs.push(`💥 [오답 대참사] ${target.name}이(가) "${actor.skillName}"에 팩트로 대답했다가 ${skillDmg} 멘탈 폭격을 맞았습니다!`);
+                } else {
+                  newLogs.push(`✨ [${actor.name}] 스킬 발동: "${actor.quote}" (${skillDmg} 피해)`);
+                }
+
+                // 솔로천국 커플지옥 히든 증폭
+                if (actor.team === 'ally' && hiddenComboActive && target.star >= 2) {
+                  skillDmg = Math.round(skillDmg * 1.4);
+                }
+
+                applyDamage(target, skillDmg);
+
+                // 극F 아군 치유
+                if (actor.traits.includes('mbti_f')) {
+                  const friends = next.filter(f => f.team === actor.team && f.hp > 0);
+                  friends.sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp);
+                  if (friends[0]) {
+                    friends[0].hp = Math.min(friends[0].maxHp, friends[0].hp + 130);
+                  }
+                }
+              } else {
+                // 일반 공격
+                let dmg = actor.atk;
+                if (actor.team === 'ally' && activeSynergies.mbti_t >= 2 && actor.traits.includes('mbti_t')) {
+                  dmg += 35; // 극T 고정 피해
+                }
+                applyDamage(target, dmg);
+              }
+            });
+
+            if (newLogs.length > 0) {
+              setCombatLogs(l => [...newLogs.slice(0, 2), ...l].slice(0, 8));
+            }
+            return next;
+          });
+        }, 650);
+
+        return () => clearInterval(id);
+      }, [phase, hiddenComboActive, activeSynergies]);
+
+      function applyDamage(target, dmg) {
+        if (target.shield > 0) {
+          if (target.shield >= dmg) {
+            target.shield -= dmg;
+            return;
+          } else {
+            dmg -= target.shield;
+            target.shield = 0;
+          }
+        }
+        target.hp = Math.max(0, target.hp - dmg);
+      }
+
+      // 전투 종료 및 정산
+      const finishCombat = (isWin, survivingEnemies) => {
+        setPhase('RESULT');
+        const interest = Math.min(5, Math.floor(gold / 10));
+        const baseReward = 5 + (isWin ? 1 : 0);
+        const totalEarn = baseReward + interest;
+
+        if (isWin) {
+          setStreak(s => (s >= 0 ? s + 1 : 1));
+          setBannerMsg({
+            win: true,
+            title: '🎉 소개팅 배틀 승리! (솔로 천국!)',
+            sub: `획득 골드: 기본 ${baseReward}G + 이자 ${interest}G = +${totalEarn}G`
+          });
+        } else {
+          const hpLoss = survivingEnemies * 8;
+          setPlayerHp(h => Math.max(0, h - hpLoss));
+          setStreak(s => (s <= 0 ? s - 1 : -1));
+          setBannerMsg({
+            win: false,
+            title: `💔 멘탈 데미지 -${hpLoss} (라운드 패배)`,
+            sub: `획득 골드: 기본 ${baseReward}G + 이자 ${interest}G = +${totalEarn}G`
+          });
+        }
+
+        setTimeout(() => {
+          setGold(g => g + totalEarn);
+          setWaveIdx(w => w + 1);
+          setBannerMsg(null);
+          setTimer(25);
+          setPhase('PREP');
+          if (!shopLocked) rollShop(0);
+        }, 2500);
+      };
+
+      const currentWave = ENEMY_WAVES[waveIdx % ENEMY_WAVES.length];
+      const interestCount = Math.min(5, Math.floor(gold / 10));
+
+      // 렌더링할 유닛 목록 (전투 중엔 combatUnits, 준비 중엔 내 보드 + 적 스카우팅 보드)
+      const displayUnits = useMemo(() => {
+        if (phase === 'COMBAT' || phase === 'RESULT') {
+          return combatUnits.filter(u => u.hp > 0);
+        }
+        const enemyPreview = currentWave.units.map((eu, i) => ({
+          ...createUnitInstance(eu.champId, eu.star),
+          uid: `preview_${i}`,
+          row: eu.row,
+          col: eu.col,
+          team: 'enemy'
+        }));
+        return [...boardUnits, ...enemyPreview];
+      }, [phase, combatUnits, boardUnits, currentWave]);
+
+      return (
+        <div className="min-h-screen w-full bg-[#070913] text-slate-100 flex flex-col justify-between p-2 md:p-3 select-none overflow-hidden">
+          {/* 상단 HUD: 스테이지 & 타이머 & 스킨 스위치 & 원클릭 프리셋 */}
+          <header className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 shadow-lg z-20">
+            <div className="flex items-center gap-3">
+              <span className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-pink-600 to-purple-600 font-extrabold text-xs md:text-sm tracking-tight shadow">
+                스테이지 {currentWave.stage}
+              </span>
+              <div className="text-xs md:text-sm font-bold text-slate-200">
+                {currentWave.title}
+              </div>
+              <div className={`px-3 py-0.5 rounded-full text-xs font-extrabold border ${
+                phase === 'PREP'
+                  ? 'bg-emerald-950/90 border-emerald-400 text-emerald-300'
+                  : 'bg-rose-950/90 border-rose-400 text-rose-300 animate-pulse'
+              }`}>
+                {phase === 'PREP' ? `⏱️ 준비 시간 ${timer}초` : '⚔️ 실시간 교전 중!'}
+              </div>
+            </div>
+
+            {/* 결투장 스킨 변경 스위치 */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {Object.values(ARENA_THEMES).map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setArenaKey(t.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
+                    arenaKey === t.id
+                      ? 'bg-amber-500 text-slate-950 border-amber-300 shadow'
+                      : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:bg-slate-700'
+                  }`}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+
+            {/* 우측 액션 버튼 */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={applyHighlightPreset}
+                disabled={phase !== 'PREP'}
+                className="px-2.5 py-1 rounded-lg text-xs font-extrabold bg-gradient-to-r from-amber-500 to-orange-600 text-slate-950 hover:brightness-110 disabled:opacity-40 shadow"
+              >
+                🔥 스님·신부님 vs 여친질문덱 세팅
+              </button>
+              <button
+                onClick={startCombat}
+                disabled={phase !== 'PREP'}
+                className="px-3 py-1 rounded-lg text-xs font-extrabold bg-gradient-to-r from-rose-500 to-pink-600 text-white hover:brightness-110 disabled:opacity-40 shadow"
+              >
+                ⚔️ 즉시 전투 (Space)
+              </button>
+              <button
+                onClick={() => setShowGuide(!showGuide)}
+                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 border border-slate-600 text-slate-200 hover:bg-slate-700"
+              >
+                📖 도감
+              </button>
+            </div>
+          </header>
+
+          {/* 메인 중단 영역: 좌측 시너지 + 중앙 3D 헥사곤 결투장 + 우측 실시간 중계 & 로비 */}
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-2 my-2 items-center relative">
+            {/* 좌측 시너지 트래커 패널 */}
+            <aside className="lg:col-span-2 bg-slate-900/85 border border-slate-800 rounded-xl p-2.5 flex flex-col gap-1.5 max-h-[430px] overflow-y-auto">
+              <div className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-1">
+                활성 연애 시너지 ({boardUnits.length}/{level}명 배치)
+              </div>
+
+              {hiddenComboActive && (
+                <div className="p-2 rounded-lg bg-gradient-to-r from-amber-500/20 via-purple-600/30 to-pink-500/20 border border-amber-400 text-amber-200 text-xs font-extrabold animate-pulse">
+                  🔥 [솔로천국 커플지옥] 발동!
+                  <div className="text-[10px] font-normal text-amber-100 mt-0.5">
+                    모솔+독신주의 합동: 적 2성(커플) 기물에게 피해량 +40%!
+                  </div>
+                </div>
+              )}
+
+              {Object.values(SYNERGIES).map(syn => {
+                const count = activeSynergies[syn.id] || 0;
+                const activeTier = syn.thresholds.filter(t => count >= t).length;
+                return (
+                  <div
+                    key={syn.id}
+                    title={syn.desc}
+                    className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs transition ${
+                      activeTier > 0
+                        ? syn.badgeBg
+                        : 'bg-slate-950/50 border-slate-800/80 text-slate-500'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <span className="text-base">{syn.icon}</span>
+                      <span>{syn.name}</span>
+                    </div>
+                    <span className="font-mono font-extrabold text-[11px]">
+                      {count} / {syn.thresholds.join('/')}
+                    </span>
+                  </div>
+                );
+              })}
+
+              <div className="mt-2 p-2 rounded-lg bg-slate-950/80 border border-slate-800 text-[11px] text-slate-300 leading-relaxed">
+                💡 <b>배치 팁:</b> 🧙‍♂️<b>모솔</b>은 주변 8칸에 아군이 없어야 <span className="text-purple-300 font-bold">👑고독</span>이 켜지며, 📿<b>독신주의(스님·신부님)</b>는 앞줄에서 여친의 공포 질문을 씹어먹습니다!
+              </div>
+            </aside>
+
+            {/* 중앙 3D 원근감 결투장 (벚꽃 공원 / 홍대 포차 / 산속 사찰) */}
+            <main className="lg:col-span-8 flex flex-col items-center justify-center arena-perspective relative">
+              {/* 승패 결과 배너 */}
+              {bannerMsg && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+                  <div className={`px-8 py-5 rounded-2xl border-2 shadow-2xl text-center backdrop-blur-md ${
+                    bannerMsg.win
+                      ? 'bg-emerald-950/90 border-emerald-400 text-emerald-100'
+                      : 'bg-rose-950/90 border-rose-400 text-rose-100'
+                  }`}>
+                    <div className="text-2xl font-black mb-1">{bannerMsg.title}</div>
+                    <div className="text-sm font-bold opacity-90">{bannerMsg.sub}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3D 아레나 보드 프레임 */}
+              <div className={`w-full max-w-4xl rounded-3xl border-2 p-3 md:p-5 relative overflow-hidden arena-board ${arena.boardBg} ${arena.borderCol}`}>
+                {/* 떠다니는 테마 파티클 (벚꽃잎/네온/단풍) */}
+                <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                  {[0, 1, 2, 3, 4, 5].map(i => (
+                    <span
+                      key={i}
+                      style={{ left: `${12 + i * 15}%`, animationDelay: `${i * 1.1}s` }}
+                      className=" absolute top-0 text-lg opacity-70 particle-anim"
+                    >
+                      {arena.particle}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  {/* 좌측 입체 골드 이자 제단 (10G ~ 50G) */}
+                  <div className="hidden sm:flex flex-col items-center gap-1.5 bg-slate-950/70 border border-slate-700/70 px-2 py-2.5 rounded-2xl shadow-inner">
+                    <span className="text-[10px] font-extrabold text-amber-300">이자 제단</span>
+                    {[5, 4, 3, 2, 1].map(step => {
+                      const lit = interestCount >= step;
+                      return (
+                        <div
+                          key={step}
+                          title={`${step * 10}골드 이자 (+${step}G)`}
+                          className={`w-8 h-8 rounded-full flex items-center justify-center border text-sm transition-all ${
+                            lit
+                              ? 'bg-gradient-to-b from-amber-300 to-amber-600 border-yellow-200 shadow-[0_0_12px_rgba(251,191,36,0.9)] scale-105'
+                              : 'bg-slate-900/90 border-slate-700 opacity-35'
+                          }`}
+                        >
+                          {lit ? arena.totemIcon : '⚪'}
+                        </div>
+                      );
+                    })}
+                    <div className="text-[10px] font-bold text-slate-400 mt-1">+{interestCount}G</div>
+                  </div>
+
+                  {/* 중앙 오프셋 헥사곤 타일 그리드 (4행 x 7열) */}
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    {[0, 1, 2, 3].map(row => {
+                      const isOddRow = row % 2 === 1;
+                      return (
+                        <React.Fragment key={row}>
+                          {/* 1행과 2행 사이 결투장 테마 강/산책로 구분선 */}
+                          {row === 2 && (
+                            <div className="my-1 py-1 px-4 rounded-full bg-slate-950/65 border border-white/15 text-center text-[11px] font-extrabold tracking-wide text-amber-200/90 shadow-inner">
+                              {arena.riverText}
+                            </div>
+                          )}
+
+                          <div className={`grid grid-cols-7 gap-1.5 md:gap-2 ${isOddRow ? 'pl-5 md:pl-8' : 'pr-5 md:pr-8'}`}>
+                            {[0, 1, 2, 3, 4, 5, 6].map(col => {
+                              const unit = displayUnits.find(u => u.row === row && u.col === col);
+                              const isAllySide = row >= 2;
+                              const isSelected =
+                                selectedSource &&
+                                selectedSource.type === 'board' &&
+                                unit &&
+                                selectedSource.uid === unit.uid;
+                              const isIsoMosol = unit && unit.team === 'ally' && isolatedUids.has(unit.uid);
+                              const isAwkwardMosol =
+                                unit &&
+                                unit.team === 'ally' &&
+                                unit.traits.includes('mosol') &&
+                                !isolatedUids.has(unit.uid);
+                              const costStyle = unit ? COST_STYLES[unit.cost] : null;
+
+                              return (
+                                <div
+                                  key={`${row}-${col}`}
+                                  onClick={() => handleTileClick(row, col)}
+                                  className={`relative h-16 md:h-20 flex flex-col items-center justify-center transition-all cursor-pointer rounded-xl border ${
+                                    phase === 'COMBAT'
+                                      ? 'border-white/5 bg-slate-950/20'
+                                      : isAllySide
+                                      ? arena.tileAlly
+                                      : arena.tileEnemy
+                                  } ${isSelected ? 'ring-2 ring-amber-400 scale-105 z-20' : ''}`}
+                                >
+                                  {/* 바닥 육각형 문양 */}
+                                  <div className="hex-tile absolute inset-1.5 bg-white/[0.03] pointer-events-none" />
+
+                                  {/* 배치된 기물 피규어 */}
+                                  {unit && (
+                                    <div className="relative z-10 flex flex-col items-center w-full px-1 unit-bounce">
+                                      {/* 말풍선 스킬/카운터 대사 */}
+                                      {unit.bubble && (
+                                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-full bg-amber-300 text-slate-950 font-black text-[10px] shadow-lg border border-white z-30 animate-bounce">
+                                          {unit.bubble}
+                                        </div>
+                                      )}
+
+                                      {/* 모솔 고독/어색 배지 */}
+                                      {phase === 'PREP' && isIsoMosol && (
+                                        <span className="absolute -top-3 right-0 px-1 rounded bg-purple-600 text-[9px] font-black text-white shadow">
+                                          👑고독
+                                        </span>
+                                      )}
+                                      {phase === 'PREP' && isAwkwardMosol && (
+                                        <span className="absolute -top-3 right-0 px-1 rounded bg-rose-600 text-[9px] font-black text-white shadow">
+                                          ⚠️어색
+                                        </span>
+                                      )}
+
+                                      {/* 별 등급 */}
+                                      <div className={`text-[10px] font-black leading-none mb-0.5 ${
+                                        unit.star === 3 ? 'text-amber-300' : unit.star === 2 ? 'text-sky-300' : 'text-slate-300'
+                                      }`}>
+                                        {'★'.repeat(unit.star)}
+                                      </div>
+
+                                      {/* HP & 마나 바 */}
+                                      <div className="w-11 md:w-14 h-1.5 bg-slate-950 rounded-full overflow-hidden border border-black/60">
+                                        <div
+                                          style={{ width: `${Math.max(0, Math.min(100, (unit.hp / unit.maxHp) * 100))}%` }}
+                                          className={`h-full ${unit.team === 'ally' ? 'bg-emerald-400' : 'bg-rose-500'}`}
+                                        />
+                                      </div>
+                                      <div className="w-11 md:w-14 h-1 bg-slate-950 rounded-full overflow-hidden mb-0.5">
+                                        <div
+                                          style={{ width: `${Math.min(100, (unit.mana / unit.maxMana) * 100)}%` }}
+                                          className="h-full bg-sky-400"
+                                        />
+                                      </div>
+
+                                      {/* 3D 원형 페데스탈(발판) 위 이모지 피규어 */}
+                                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full bg-gradient-to-b ${costStyle.bg} border-2 ${costStyle.border} flex items-center justify-center text-lg md:text-xl shadow-[0_6px_0_rgba(0,0,0,0.6)]`}>
+                                        {unit.emoji}
+                                      </div>
+
+                                      <span className="mt-0.5 text-[10px] font-extrabold text-white truncate max-w-full drop-shadow">
+                                        {unit.name}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+
+                  {/* 우측 결투장 장식 소품 기둥 */}
+                  <div className="hidden sm:flex flex-col items-center justify-between gap-3 bg-slate-950/60 border border-slate-700/60 px-2.5 py-3 rounded-2xl text-xl">
+                    {arena.propsRight.map((p, idx) => (
+                      <span key={idx} className="drop-shadow">{p}</span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 전장 좌측 하단 내 꼬마 전설이 아바타 */}
+                <div className="mt-3 flex items-center justify-between bg-slate-950/80 border border-slate-700/80 rounded-2xl px-3 py-1.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-amber-500 border-2 border-white flex items-center justify-center text-lg shadow">
+                      🐥
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-amber-300">내 아바타 (멘탈 ❤️ {playerHp})</span>
+                        <span className="text-[11px] font-bold text-slate-400">Lv.{level}</span>
+                      </div>
+                      <div className="text-xs text-slate-200 font-semibold">
+                        💬 "{avatarQuote}"
+                      </div>
+                    </div>
+                  </div>
+
+                  {selectedSource && phase === 'PREP' && (
+                    <button
+                      onClick={sellSelectedUnit}
+                      className="px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow"
+                    >
+                      💰 선택 기물 판매하기
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 9칸 대기석 (벤치) */}
+              <div className="w-full max-w-4xl mt-2 bg-slate-900/90 border border-slate-700/90 rounded-2xl p-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-400 font-bold mb-1 px-1">
+                  <span>🪑 대기석 (벤치 9칸 - 클릭하여 전장 타일과 자유롭게 배치/교체)</span>
+                  <span>같은 기물 3명 보유 시 ★2성 자동 합체!</span>
+                </div>
+                <div className="grid grid-cols-9 gap-1.5">
+                  {benchUnits.map((u, idx) => {
+                    const isSel = selectedSource && selectedSource.type === 'bench' && selectedSource.index === idx;
+                    const cStyle = u ? COST_STYLES[u.cost] : null;
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => handleBenchClick(idx)}
+                        className={`h-14 md:h-16 rounded-xl border flex flex-col items-center justify-center cursor-pointer transition ${
+                          u
+                            ? `bg-gradient-to-b ${cStyle.bg} ${cStyle.border}`
+                            : 'bg-slate-950/70 border-slate-800 hover:border-slate-600'
+                        } ${isSel ? 'ring-2 ring-amber-400 scale-105' : ''}`}
+                      >
+                        {u ? (
+                          <>
+                            <div className="text-[9px] text-amber-300 font-black leading-none">
+                              {'★'.repeat(u.star)}
+                            </div>
+                            <div className="text-lg leading-tight">{u.emoji}</div>
+                            <div className="text-[9px] font-bold text-slate-100 truncate max-w-full px-1">
+                              {u.name}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-[10px] text-slate-600 font-mono">{idx + 1}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </main>
+
+            {/* 우측 전투 중계 로그 & 8인 생존 현황판 */}
+            <aside className="lg:col-span-2 bg-slate-900/85 border border-slate-800 rounded-xl p-2.5 flex flex-col justify-between max-h-[430px] overflow-y-auto">
+              <div>
+                <div className="text-xs font-extrabold text-amber-400 uppercase tracking-wider mb-1.5">
+                  🎙️ 실시간 티키타카 중계
+                </div>
+                <div className="flex flex-col gap-1.5 text-[11px]">
+                  {combatLogs.length === 0 ? (
+                    <div className="text-slate-500 py-3 text-center">
+                      전투가 시작되면 스님·신부님의 해탈 카운터와 질문 폭격 로그가 여기에 중계됩니다.
+                    </div>
+                  ) : (
+                    combatLogs.map((log, i) => (
+                      <div key={i} className="p-1.5 rounded bg-slate-950/80 border border-slate-800 text-slate-200 leading-snug">
+                        {log}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-slate-800">
+                <div className="text-[11px] font-extrabold text-slate-400 mb-1">🏆 솔로지옥 8인 로비</div>
+                <div className="space-y-1 text-[11px]">
+                  <div className="flex justify-between px-2 py-1 rounded bg-emerald-950/60 border border-emerald-500/40 font-bold text-emerald-200">
+                    <span>1. 나 (솔로사령관)</span>
+                    <span>❤️ {playerHp}</span>
+                  </div>
+                  <div className="flex justify-between px-2 py-1 rounded bg-slate-950/60 text-slate-300">
+                    <span>2. 프로질문러여친</span>
+                    <span>❤️ 88</span>
+                  </div>
+                  <div className="flex justify-between px-2 py-1 rounded bg-slate-950/60 text-slate-300">
+                    <span>3. 해탈한주지스님</span>
+                    <span>❤️ 76</span>
+                  </div>
+                  <div className="flex justify-between px-2 py-1 rounded bg-slate-950/60 text-slate-400">
+                    <span>4. 30년차대마법사</span>
+                    <span>❤️ 64</span>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+
+          {/* 하단 롤토체스 정통 컨트롤 독 (레벨업/리롤 + 5칸 상점 카드 + 골드 표시기) */}
+          <footer className="bg-slate-900/95 border border-slate-700/90 rounded-2xl p-2.5 shadow-2xl z-20">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
+              {/* 좌측 레벨업 & 상점 새로고침 버튼 */}
+              <div className="md:col-span-3 flex md:flex-col gap-1.5">
+                <button
+                  onClick={buyXp}
+                  disabled={phase !== 'PREP' || gold < 4}
+                  className="flex-1 flex items-center justify-between px-3 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:brightness-110 disabled:opacity-40 text-white font-extrabold text-xs shadow"
+                >
+                  <span>⬆️ 경험치 구매 (F)</span>
+                  <span className="px-2 py-0.5 rounded bg-black/30 text-amber-300">4G (Lv.{level} · {xp}/{level * 4})</span>
+                </button>
+                <button
+                  onClick={() => rollShop(2)}
+                  disabled={phase !== 'PREP' || gold < 2}
+                  className="flex-1 flex items-center justify-between px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 hover:brightness-110 disabled:opacity-40 text-slate-950 font-extrabold text-xs shadow"
+                >
+                  <span>🔄 상점 새로고침 (D)</span>
+                  <span className="px-2 py-0.5 rounded bg-black/20 font-black">2G</span>
+                </button>
+              </div>
+
+              {/* 중앙 5칸 코스트별 컬러 상점 카드 */}
+              <div className="md:col-span-7 grid grid-cols-5 gap-2">
+                {shop.map((card, idx) => {
+                  if (!card || card.purchased) {
+                    return (
+                      <div
+                        key={idx}
+                        className="h-24 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-center text-xs text-slate-600 font-bold"
+                      >
+                        구매 완료
+                      </div>
+                    );
+                  }
+                  const cStyle = COST_STYLES[card.cost];
+                  const ownedCount =
+                    boardUnits.filter(u => u.champId === card.id).length +
+                    benchUnits.filter(u => u && u.champId === card.id).length;
+
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => buyChampion(idx)}
+                      className={`relative h-24 rounded-xl bg-gradient-to-b ${cStyle.bg} border-2 ${cStyle.border} p-2 flex flex-col justify-between cursor-pointer hover:-translate-y-1 transition shadow-lg`}
+                    >
+                      {ownedCount >= 2 && (
+                        <span className="absolute -top-2 right-1 px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[9px] animate-bounce shadow">
+                          ✨2성 임박!
+                        </span>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <span className="text-xl">{card.emoji}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-black/50 text-amber-300 font-black text-xs">
+                          🪙 {card.cost}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="text-xs font-black text-white truncate">{card.name}</div>
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {card.traits.map(t => (
+                            <span key={t} className="text-[9px] font-bold px-1 rounded bg-black/40 text-slate-200">
+                              {SYNERGIES[t].icon} {SYNERGIES[t].name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* 우측 보유 골드 & 이자 & 잠금 */}
+              <div className="md:col-span-2 flex md:flex-col items-center justify-between bg-slate-950/90 border border-amber-500/40 rounded-xl p-2.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-2xl">🪙</span>
+                  <div>
+                    <div className="text-xl font-black text-amber-300 leading-none">{gold} G</div>
+                    <div className="text-[10px] text-slate-400 font-bold mt-0.5">
+                      이자 +{interestCount}G / 연승 {streak}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShopLocked(!shopLocked)}
+                  className={`mt-1 w-full py-1 rounded-lg text-[11px] font-bold border ${
+                    shopLocked
+                      ? 'bg-amber-500 text-slate-950 border-amber-300'
+                      : 'bg-slate-800 text-slate-300 border-slate-700'
+                  }`}
+                >
+                  {shopLocked ? '🔒 상점 잠금중' : '🔓 상점 잠금'}
+                </button>
+              </div>
+            </div>
+          </footer>
+
+          {/* 18종 전체 기물 도감 모달 */}
+          {showGuide && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[85vh] overflow-y-auto p-5">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <h2 className="text-lg font-black text-amber-300">📖 연애적 팀 전투 - 전체 기물 & 스킬 도감</h2>
+                  <button
+                    onClick={() => setShowGuide(false)}
+                    className="px-3 py-1 rounded-lg bg-rose-600 text-white text-xs font-bold"
+                  >
+                    닫기 ✕
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 mt-4">
+                  {CHAMPIONS.map(c => (
+                    <div key={c.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-sm text-white">{c.emoji} {c.name}</span>
+                        <span className="text-xs font-bold text-amber-400">{c.cost}코스트</span>
+                      </div>
+                      <div className="text-[11px] text-sky-300 font-bold">
+                        시너지: {c.traits.map(t => `${SYNERGIES[t].icon}${SYNERGIES[t].name}`).join(' · ')}
+                      </div>
+                      <div className="text-[11px] text-slate-300">
+                        스킬: <b>{c.skillName}</b>
+                      </div>
+                      <div className="text-[11px] text-amber-200/90 italic">
+                        "{c.quote}"
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
