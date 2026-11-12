@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>TFT: 솔로지옥 v7.0 - 클린 UI 에디션</title>
+  <title>TFT: 솔로지옥 v7.1 - 무결성 에디션</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/htm/3.1.1/htm.umd.js"></script>
   <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
     * { box-sizing: border-box; user-select: none; }
@@ -54,13 +54,24 @@
   </style>
 </head>
 <body>
-  <div id="root"></div>
+  <!-- 로딩 및 에러 진단용 기본 화면 (React가 켜지면 자동으로 사라짐) -->
+  <div id="root">
+    <div style="height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fbbf24;font-weight:bold;">
+      <div>⚔️ 결투장 데이터를 불러오는 중입니다...</div>
+      <div id="err-box" style="color:#f43f5e;font-size:12px;margin-top:10px;max-width:80%;"></div>
+    </div>
+  </div>
 
-  <script type="text/babel">
+  <script>
+    window.onerror = function(msg, url, line) {
+      var el = document.getElementById('err-box');
+      if (el) el.innerText = '오류 감지: ' + msg + ' (Line: ' + line + ')';
+    };
+
     const { useState, useEffect, useMemo } = React;
+    const html = htm.bind(React.createElement);
 
-    // 3D SD 캐릭터 SVG 렌더러
-    function Chibi3DModel({ champId, cost = 1, star = 1, size = 66, isEnemy = false }) {
+    function Chibi3DModel({ champId, cost = 1, star = 1, size = 64, isEnemy = false }) {
       const MODELS = {
         c1:  { skin: '#ffedd5', hair: '#475569', suit: '#1e293b', accent: '#38bdf8', headType: 'short', weapon: 'glass', aura: '#94a3b8' },
         c2:  { skin: '#fde68a', hair: '#312e81', suit: '#4338ca', accent: '#a855f7', headType: 'glasses', weapon: 'phone', aura: '#818cf8' },
@@ -85,110 +96,110 @@
       const uidGrad = `${champId}_${size}_${isEnemy ? 'e' : 'a'}`;
       const pedColor = isEnemy ? '#e11d48' : cost === 5 ? '#eab308' : cost === 4 ? '#a855f7' : cost === 3 ? '#0ea5e9' : cost === 2 ? '#10b981' : '#64748b';
 
-      return (
-        <svg width={size} height={size} viewBox="0 0 100 110" className="overflow-visible drop-shadow-[0_8px_8px_rgba(0,0,0,0.75)]">
+      return html`
+        <svg width=${size} height=${size} viewBox="0 0 100 110" className="overflow-visible drop-shadow-[0_8px_8px_rgba(0,0,0,0.75)]">
           <defs>
-            <radialGradient id={`sk_${uidGrad}`} cx="35%" cy="30%" r="70%">
+            <radialGradient id=${`sk_${uidGrad}`} cx="35%" cy="30%" r="70%">
               <stop offset="0%" stopColor="#fff" stopOpacity="0.6" />
-              <stop offset="35%" stopColor={m.skin} />
+              <stop offset="35%" stopColor=${m.skin} />
               <stop offset="100%" stopColor="#9a6b56" />
             </radialGradient>
-            <linearGradient id={`st_${uidGrad}`} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor={m.accent} stopOpacity="0.45" />
-              <stop offset="40%" stopColor={m.suit} />
+            <linearGradient id=${`st_${uidGrad}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor=${m.accent} stopOpacity="0.45" />
+              <stop offset="40%" stopColor=${m.suit} />
               <stop offset="100%" stopColor="#090d16" />
             </linearGradient>
-            <linearGradient id={`pd_${uidGrad}`} x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor={pedColor} />
+            <linearGradient id=${`pd_${uidGrad}`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor=${pedColor} />
               <stop offset="100%" stopColor="#0f172a" />
             </linearGradient>
           </defs>
           <ellipse cx="50" cy="98" rx="35" ry="9" fill="rgba(0,0,0,0.7)" />
-          <ellipse cx="50" cy="93" rx="32" ry="8.5" fill={`url(#pd_${uidGrad})`} stroke={pedColor} strokeWidth="2" />
+          <ellipse cx="50" cy="93" rx="32" ry="8.5" fill=${`url(#pd_${uidGrad})`} stroke=${pedColor} strokeWidth="2" />
           <ellipse cx="50" cy="90" rx="26" ry="6" fill="#1e293b" />
-          {(cost >= 4 || star >= 2) && <ellipse cx="50" cy="90" rx="30" ry="7.5" fill="none" stroke={m.aura} strokeWidth="2.5" strokeDasharray="5 3" />}
+          ${(cost >= 4 || star >= 2) && html`<ellipse cx="50" cy="90" rx="30" ry="7.5" fill="none" stroke=${m.aura} strokeWidth="2.5" strokeDasharray="5 3" />`}
           <rect x="37" y="74" width="9" height="15" rx="4.5" fill="#0f172a" />
           <rect x="54" y="74" width="9" height="15" rx="4.5" fill="#0f172a" />
-          {(m.headType === 'highmonk' || m.headType === 'wizard' || m.headType === 'crown') && (
-            <path d="M26 52 Q50 44 74 52 L80 86 Q50 93 20 86 Z" fill={m.accent} opacity="0.85" />
-          )}
-          <path d="M31 50 Q50 44 69 50 L73 78 Q50 84 27 78 Z" fill={`url(#st_${uidGrad})`} stroke="rgba(255,255,255,0.25)" strokeWidth="1.2" />
-          {m.headType === 'priest' && (
-            <>
+          ${(m.headType === 'highmonk' || m.headType === 'wizard' || m.headType === 'crown') && html`
+            <path d="M26 52 Q50 44 74 52 L80 86 Q50 93 20 86 Z" fill=${m.accent} opacity="0.85" />
+          `}
+          <path d="M31 50 Q50 44 69 50 L73 78 Q50 84 27 78 Z" fill=${`url(#st_${uidGrad})`} stroke="rgba(255,255,255,0.25)" strokeWidth="1.2" />
+          ${m.headType === 'priest' && html`
+            <g>
               <rect x="45" y="50" width="10" height="4.5" rx="1" fill="#fff" />
               <path d="M50 57 L50 73 M44 63 L56 63" stroke="#facc15" strokeWidth="3" strokeLinecap="round" />
-            </>
-          )}
-          {(m.headType === 'monk' || m.headType === 'highmonk') && (
+            </g>
+          `}
+          ${(m.headType === 'monk' || m.headType === 'highmonk') && html`
             <path d="M33 52 L67 75 M40 50 L71 68" stroke="#d97706" strokeWidth="4.5" strokeLinecap="round" />
-          )}
-          <rect x="20" y="52" width="11" height="21" rx="5.5" transform="rotate(14 25 52)" fill={`url(#st_${uidGrad})`} />
-          <rect x="69" y="52" width="11" height="21" rx="5.5" transform="rotate(-14 75 52)" fill={`url(#st_${uidGrad})`} />
-          <circle cx="21" cy="72" r="4.8" fill={`url(#sk_${uidGrad})`} />
-          <circle cx="79" cy="72" r="4.8" fill={`url(#sk_${uidGrad})`} />
-          <circle cx="50" cy="34" r="21" fill={`url(#sk_${uidGrad})`} />
-          {m.headType === 'monk' && (
-            <>
+          `}
+          <rect x="20" y="52" width="11" height="21" rx="5.5" transform="rotate(14 25 52)" fill=${`url(#st_${uidGrad})`} />
+          <rect x="69" y="52" width="11" height="21" rx="5.5" transform="rotate(-14 75 52)" fill=${`url(#st_${uidGrad})`} />
+          <circle cx="21" cy="72" r="4.8" fill=${`url(#sk_${uidGrad})`} />
+          <circle cx="79" cy="72" r="4.8" fill=${`url(#sk_${uidGrad})`} />
+          <circle cx="50" cy="34" r="21" fill=${`url(#sk_${uidGrad})`} />
+          ${m.headType === 'monk' && html`
+            <g>
               <circle cx="45" cy="19" r="1.4" fill="#92400e" /><circle cx="50" cy="19" r="1.4" fill="#92400e" /><circle cx="55" cy="19" r="1.4" fill="#92400e" />
               <circle cx="45" cy="23" r="1.4" fill="#92400e" /><circle cx="50" cy="23" r="1.4" fill="#92400e" /><circle cx="55" cy="23" r="1.4" fill="#92400e" />
-            </>
-          )}
-          {m.headType === 'highmonk' && (
-            <>
+            </g>
+          `}
+          ${m.headType === 'highmonk' && html`
+            <g>
               <circle cx="50" cy="32" r="26" fill="none" stroke="#facc15" strokeWidth="3.5" />
               <circle cx="50" cy="19" r="2.2" fill="#dc2626" />
-            </>
-          )}
-          {m.headType === 'priest' && <path d="M29 30 Q50 10 71 30 Q62 18 50 20 Q38 18 29 30 Z" fill="#facc15" />}
-          {m.headType === 'twintail' && (
-            <>
-              <circle cx="25" cy="30" r="9" fill={m.hair} /><circle cx="75" cy="30" r="9" fill={m.hair} />
-              <path d="M29 30 Q50 10 71 30 Q50 22 29 30 Z" fill={m.hair} />
-            </>
-          )}
-          {m.headType === 'wavy' && (
-            <>
-              <path d="M27 34 Q24 55 32 62 L29 30 Q50 8 71 30 L68 62 Q76 55 73 34 Z" fill={m.hair} />
+            </g>
+          `}
+          ${m.headType === 'priest' && html`<path d="M29 30 Q50 10 71 30 Q62 18 50 20 Q38 18 29 30 Z" fill="#facc15" />`}
+          ${m.headType === 'twintail' && html`
+            <g>
+              <circle cx="25" cy="30" r="9" fill=${m.hair} /><circle cx="75" cy="30" r="9" fill=${m.hair} />
+              <path d="M29 30 Q50 10 71 30 Q50 22 29 30 Z" fill=${m.hair} />
+            </g>
+          `}
+          ${m.headType === 'wavy' && html`
+            <g>
+              <path d="M27 34 Q24 55 32 62 L29 30 Q50 8 71 30 L68 62 Q76 55 73 34 Z" fill=${m.hair} />
               <circle cx="64" cy="20" r="4.5" fill="#fb7185" />
-            </>
-          )}
-          {m.headType === 'wizard' && (
-            <>
+            </g>
+          `}
+          ${m.headType === 'wizard' && html`
+            <g>
               <polygon points="50,0 24,25 76,25" fill="#312e81" stroke="#c084fc" strokeWidth="2" />
               <ellipse cx="50" cy="25" rx="28" ry="5" fill="#4338ca" />
-            </>
-          )}
-          {m.headType === 'dogear' && (
-            <>
+            </g>
+          `}
+          ${m.headType === 'dogear' && html`
+            <g>
               <ellipse cx="30" cy="22" rx="6" ry="11" transform="rotate(-25 30 22)" fill="#92400e" />
               <ellipse cx="70" cy="22" rx="6" ry="11" transform="rotate(25 70 22)" fill="#92400e" />
               <path d="M30 28 Q50 12 70 28 Z" fill="#92400e" />
-            </>
-          )}
-          {m.headType === 'robot' && <rect x="32" y="15" width="36" height="10" rx="3" fill="#0284c7" />}
-          {m.headType === 'crown' && <polygon points="34,20 40,8 50,16 60,8 66,20" fill="#facc15" />}
-          {['short', 'glasses', 'hood', 'bob', 'spiky', 'beret', 'messy', 'flower', 'slick'].includes(m.headType) && (
-            <path d="M28 31 Q50 9 72 31 Q60 20 50 22 Q40 20 28 31 Z" fill={m.hair} />
-          )}
-          {m.headType === 'monk' || m.headType === 'highmonk' ? (
-            <>
+            </g>
+          `}
+          ${m.headType === 'robot' && html`<rect x="32" y="15" width="36" height="10" rx="3" fill="#0284c7" />`}
+          ${m.headType === 'crown' && html`<polygon points="34,20 40,8 50,16 60,8 66,20" fill="#facc15" />`}
+          ${['short', 'glasses', 'hood', 'bob', 'spiky', 'beret', 'messy', 'flower', 'slick'].includes(m.headType) && html`
+            <path d="M28 31 Q50 9 72 31 Q60 20 50 22 Q40 20 28 31 Z" fill=${m.hair} />
+          `}
+          ${(m.headType === 'monk' || m.headType === 'highmonk') ? html`
+            <g>
               <path d="M38 35 Q42 32 46 35" fill="none" stroke="#1e293b" strokeWidth="2.4" strokeLinecap="round" />
               <path d="M54 35 Q58 32 62 35" fill="none" stroke="#1e293b" strokeWidth="2.4" strokeLinecap="round" />
-            </>
-          ) : (
-            <>
+            </g>
+          ` : html`
+            <g>
               <ellipse cx="41" cy="35" rx="3.4" ry="4" fill="#0f172a" />
               <ellipse cx="59" cy="35" rx="3.4" ry="4" fill="#0f172a" />
               <circle cx="42" cy="33.5" r="1.3" fill="#fff" />
               <circle cx="60" cy="33.5" r="1.3" fill="#fff" />
-            </>
-          )}
-          {m.weapon === 'moktak' && <circle cx="82" cy="68" r="8.5" fill="#d97706" stroke="#78350f" strokeWidth="2" />}
-          {m.weapon === 'cross' && <path d="M83 48 L83 72 M77 56 L89 56" stroke="#facc15" strokeWidth="4.5" strokeLinecap="round" />}
-          {m.weapon === 'staff' && <circle cx="82" cy="38" r="7" fill="#38bdf8" stroke="#fff" strokeWidth="2" />}
-          {!['moktak', 'cross', 'staff'].includes(m.weapon) && <circle cx="82" cy="66" r="6.5" fill={m.accent} stroke="#fff" strokeWidth="1.5" />}
+            </g>
+          `}
+          ${m.weapon === 'moktak' && html`<circle cx="82" cy="68" r="8.5" fill="#d97706" stroke="#78350f" strokeWidth="2" />`}
+          ${m.weapon === 'cross' && html`<path d="M83 48 L83 72 M77 56 L89 56" stroke="#facc15" strokeWidth="4.5" strokeLinecap="round" />`}
+          ${m.weapon === 'staff' && html`<circle cx="82" cy="38" r="7" fill="#38bdf8" stroke="#fff" strokeWidth="2" />`}
+          ${!['moktak', 'cross', 'staff'].includes(m.weapon) && html`<circle cx="82" cy="66" r="6.5" fill=${m.accent} stroke="#fff" strokeWidth="1.5" />`}
         </svg>
-      );
+      `;
     }
 
     const SYNERGIES = {
@@ -589,237 +600,231 @@
         return [...boardUnits, ...enemies];
       }, [phase, combatUnits, boardUnits, curStage]);
 
-      return (
+      return html`
         <div className="h-screen w-screen flex flex-col justify-between bg-[#05070e] text-slate-100 overflow-hidden">
-          {/* 상단 슬림 HUD */}
           <header className="h-12 shrink-0 bg-slate-900/95 border-b border-slate-800 px-4 flex items-center justify-between z-30">
             <div className="flex items-center gap-2.5">
-              <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-black text-xs">{curStage.stage}</span>
-              <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-emerald-400 font-black text-xs">❤️ {hp}</span>
-              <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-sky-300 font-black text-xs">👥 {boardUnits.length}/{level}</span>
+              <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-black text-xs">${curStage.stage}</span>
+              <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-emerald-400 font-black text-xs">❤️ ${hp}</span>
+              <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-sky-300 font-black text-xs">👥 ${boardUnits.length}/${level}</span>
             </div>
             <div className="flex items-center gap-2.5">
               <div className="w-36 sm:w-52 h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
-                <div style={{ width: `${phase === 'PREP' ? (timeLeft / 25) * 100 : 100}%` }} className={`h-full transition-all duration-500 ${phase === 'PREP' ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+                <div style=${{ width: `${phase === 'PREP' ? (timeLeft / 25) * 100 : 100}%` }} className=${`h-full transition-all duration-500 ${phase === 'PREP' ? 'bg-emerald-400' : 'bg-rose-500'}`} />
               </div>
-              <span className="font-mono font-black text-sm text-amber-300 w-8">{phase === 'PREP' ? `${timeLeft}s` : '⚔️'}</span>
+              <span className="font-mono font-black text-sm text-amber-300 w-8">${phase === 'PREP' ? `${timeLeft}s` : '⚔️'}</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 gap-1">
-                {Object.values(ARENAS).map(a => (
-                  <button key={a.id} onClick={() => setArenaId(a.id)} className={`w-7 h-7 rounded flex items-center justify-center text-sm transition ${arenaId === a.id ? 'bg-amber-400 text-slate-950' : 'opacity-50 hover:opacity-100'}`}>
-                    {a.icon}
+                ${Object.values(ARENAS).map(a => html`
+                  <button key=${a.id} onClick=${() => setArenaId(a.id)} className=${`w-7 h-7 rounded flex items-center justify-center text-sm transition ${arenaId === a.id ? 'bg-amber-400 text-slate-950' : 'opacity-50 hover:opacity-100'}`}>
+                    ${a.icon}
                   </button>
-                ))}
+                `)}
               </div>
-              <button onClick={startCombat} disabled={phase !== 'PREP'} className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:brightness-110 disabled:opacity-40 text-white font-black text-xs shadow">
+              <button onClick=${startCombat} disabled=${phase !== 'PREP'} className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:brightness-110 disabled:opacity-40 text-white font-black text-xs shadow">
                 ⚔️ 전투
               </button>
             </div>
           </header>
 
-          {/* 중앙: 좌측 배지형 시너지 + 와이드 3D 결투장 */}
           <div className="flex-1 flex overflow-hidden relative">
             <aside className="w-32 shrink-0 bg-slate-900/75 border-r border-slate-800/80 p-2 flex flex-col gap-1.5 justify-center z-20">
-              {comboActive && (
+              ${comboActive && html`
                 <div className="px-2 py-1.5 rounded-xl bg-amber-500/20 border border-amber-400 text-amber-300 text-[11px] font-black text-center animate-pulse">
                   🔥 솔로천국
                 </div>
-              )}
-              {Object.values(SYNERGIES).map(syn => {
+              `}
+              ${Object.values(SYNERGIES).map(syn => {
                 const cnt = traitCounts[syn.id] || 0;
                 const active = cnt >= syn.thresholds[0];
-                return (
-                  <div key={syn.id} title={syn.desc} className={`px-2.5 py-1.5 rounded-xl border flex items-center justify-between transition ${active ? 'bg-slate-800 border-amber-400 text-white shadow' : 'bg-slate-950/50 border-slate-800/70 text-slate-500'}`}>
+                return html`
+                  <div key=${syn.id} title=${syn.desc} className=${`px-2.5 py-1.5 rounded-xl border flex items-center justify-between transition ${active ? 'bg-slate-800 border-amber-400 text-white shadow' : 'bg-slate-950/50 border-slate-800/70 text-slate-500'}`}>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-base">{syn.icon}</span>
-                      <span className="text-xs font-extrabold">{syn.name}</span>
+                      <span className="text-base">${syn.icon}</span>
+                      <span className="text-xs font-extrabold">${syn.name}</span>
                     </div>
-                    <span className={`font-mono text-xs font-black px-1.5 rounded ${active ? 'bg-amber-400 text-slate-950' : 'text-slate-600'}`}>
-                      {cnt}
+                    <span className=${`font-mono text-xs font-black px-1.5 rounded ${active ? 'bg-amber-400 text-slate-950' : 'text-slate-600'}`}>
+                      ${cnt}
                     </span>
                   </div>
-                );
+                `;
               })}
             </aside>
 
             <main className="flex-1 flex flex-col items-center justify-between p-2.5 overflow-hidden relative">
-              {banner && (
+              ${banner && html`
                 <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
-                  <div className={`px-8 py-3.5 rounded-2xl border-2 font-black text-2xl shadow-2xl backdrop-blur-md ${banner.win ? 'bg-emerald-950/90 border-emerald-400 text-emerald-200' : 'bg-rose-950/90 border-rose-400 text-rose-200'}`}>
-                    {banner.text}
+                  <div className=${`px-8 py-3.5 rounded-2xl border-2 font-black text-2xl shadow-2xl backdrop-blur-md ${banner.win ? 'bg-emerald-950/90 border-emerald-400 text-emerald-200' : 'bg-rose-950/90 border-rose-400 text-rose-200'}`}>
+                    ${banner.text}
                   </div>
                 </div>
-              )}
+              `}
 
               <div className="w-full max-w-5xl flex-1 flex items-center justify-center tft-stage-wrap my-auto">
-                <div className={`w-full rounded-3xl border-2 px-6 py-4 tft-arena-surface flex items-center gap-4 ${arena.surface}`}>
+                <div className=${`w-full rounded-3xl border-2 px-6 py-4 tft-arena-surface flex items-center gap-4 ${arena.surface}`}>
                   <div className="hidden sm:flex flex-col gap-2 py-2">
-                    {[5, 4, 3, 2, 1].map(step => (
-                      <div key={step} className={`w-4 h-4 rounded-full border transition-all ${interestGold >= step ? 'bg-amber-400 border-yellow-100 shadow-[0_0_10px_#fbbf24] scale-110' : 'bg-slate-900 border-slate-700 opacity-30'}`} />
-                    ))}
+                    ${[5, 4, 3, 2, 1].map(step => html`
+                      <div key=${step} className=${`w-4 h-4 rounded-full border transition-all ${interestGold >= step ? 'bg-amber-400 border-yellow-100 shadow-[0_0_10px_#fbbf24] scale-110' : 'bg-slate-900 border-slate-700 opacity-30'}`} />
+                    `)}
                   </div>
                   <div className="flex-1 flex flex-col gap-2">
-                    {[0, 1, 2, 3].map(row => (
-                      <React.Fragment key={row}>
-                        {row === 2 && <div className="h-0.5 w-full bg-gradient-to-r from-transparent via-white/25 to-transparent my-0.5" />}
-                        <div className={`grid grid-cols-7 gap-2.5 ${row % 2 === 1 ? 'pl-7 pr-1' : 'pr-7 pl-1'}`}>
-                          {[0, 1, 2, 3, 4, 5, 6].map(col => {
+                    ${[0, 1, 2, 3].map(row => html`
+                      <div key=${row} className="flex flex-col gap-2">
+                        ${row === 2 && html`<div className="h-0.5 w-full bg-gradient-to-r from-transparent via-white/25 to-transparent my-0.5" />`}
+                        <div className=${`grid grid-cols-7 gap-2.5 ${row % 2 === 1 ? 'pl-7 pr-1' : 'pr-7 pl-1'}`}>
+                          ${[0, 1, 2, 3, 4, 5, 6].map(col => {
                             const unit = renderedUnits.find(u => u.row === row && u.col === col);
                             const isAllyRow = row >= 2;
                             const isSel = selected && selected.from === 'board' && unit && selected.uid === unit.uid;
                             const isIso = unit && unit.team === 'ally' && isolatedSet.has(unit.uid);
-                            return (
+                            return html`
                               <div
-                                key={`${row}-${col}`}
-                                onClick={() => {
+                                key=${`${row}-${col}`}
+                                onClick=${() => {
                                   if (phase !== 'PREP' || row < 2) return;
                                   if (!selected && unit) setSelected({ from: 'board', uid: unit.uid });
                                   else if (selected) moveUnit(selected, { type: 'board', row, col });
                                 }}
-                                onDragOver={e => e.preventDefault()}
-                                onDrop={() => moveUnit(dragSource, { type: 'board', row, col })}
-                                className={`h-24 md:h-28 rounded-2xl border-2 flex flex-col items-center justify-end pb-1.5 cursor-pointer transition shadow-[0_6px_0_rgba(0,0,0,0.45)] ${isAllyRow ? arena.allyTile : arena.enemyTile} ${isSel ? 'ring-4 ring-amber-400 scale-105 z-20' : ''}`}
+                                onDragOver=${e => e.preventDefault()}
+                                onDrop=${() => moveUnit(dragSource, { type: 'board', row, col })}
+                                className=${`h-24 md:h-28 rounded-2xl border-2 flex flex-col items-center justify-end pb-1.5 cursor-pointer transition shadow-[0_6px_0_rgba(0,0,0,0.45)] ${isAllyRow ? arena.allyTile : arena.enemyTile} ${isSel ? 'ring-4 ring-amber-400 scale-105 z-20' : ''}`}
                               >
-                                {unit && (
+                                ${unit && html`
                                   <div
-                                    draggable={phase === 'PREP' && unit.team === 'ally'}
-                                    onDragStart={() => setDragSource({ from: 'board', uid: unit.uid })}
-                                    className={`relative flex flex-col items-center w-full ${unit.animState || 'anim-idle'}`}
+                                    draggable=${phase === 'PREP' && unit.team === 'ally'}
+                                    onDragStart=${() => setDragSource({ from: 'board', uid: unit.uid })}
+                                    className=${`relative flex flex-col items-center w-full ${unit.animState || 'anim-idle'}`}
                                   >
-                                    {unit.popup && (
-                                      <div className={`absolute -top-8 left-1/2 px-2 py-0.5 rounded-lg font-black text-xs whitespace-nowrap shadow-xl border border-white/60 z-30 anim-float ${unit.popupColor}`}>
-                                        {unit.popup}
+                                    ${unit.popup && html`
+                                      <div className=${`absolute -top-8 left-1/2 px-2 py-0.5 rounded-lg font-black text-xs whitespace-nowrap shadow-xl border border-white/60 z-30 anim-float ${unit.popupColor}`}>
+                                        ${unit.popup}
                                       </div>
-                                    )}
-                                    {phase === 'PREP' && isIso && <span className="absolute -top-3 right-1 text-xs drop-shadow">👑</span>}
+                                    `}
+                                    ${phase === 'PREP' && isIso && html`<span className="absolute -top-3 right-1 text-xs drop-shadow">👑</span>`}
                                     <div className="flex items-center gap-1 mb-0.5 z-10">
-                                      <span className={`text-[10px] font-black ${unit.star === 3 ? 'text-amber-300' : unit.star === 2 ? 'text-sky-300' : 'text-slate-300'}`}>
-                                        {'★'.repeat(unit.star)}
+                                      <span className=${`text-[10px] font-black ${unit.star === 3 ? 'text-amber-300' : unit.star === 2 ? 'text-sky-300' : 'text-slate-300'}`}>
+                                        ${'★'.repeat(unit.star)}
                                       </span>
                                       <div className="w-12 h-2 bg-slate-950 rounded-full overflow-hidden border border-black">
-                                        <div style={{ width: `${Math.max(0, Math.min(100, (unit.hp / unit.maxHp) * 100))}%` }} className={`h-full transition-all duration-200 ${unit.team === 'ally' ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+                                        <div style=${{ width: `${Math.max(0, Math.min(100, (unit.hp / unit.maxHp) * 100))}%` }} className=${`h-full transition-all duration-200 ${unit.team === 'ally' ? 'bg-emerald-400' : 'bg-rose-500'}`} />
                                       </div>
                                     </div>
                                     <div className="w-12 h-1 bg-slate-950 rounded-full overflow-hidden mb-0.5 z-10">
-                                      <div style={{ width: `${Math.min(100, (unit.mana / unit.maxMana) * 100)}%` }} className="h-full bg-sky-400 transition-all duration-200" />
+                                      <div style=${{ width: `${Math.min(100, (unit.mana / unit.maxMana) * 100)}%` }} className="h-full bg-sky-400 transition-all duration-200" />
                                     </div>
                                     <div className="-my-1.5">
-                                      <Chibi3DModel champId={unit.champId} cost={unit.cost} star={unit.star} size={64} isEnemy={unit.team === 'enemy'} />
+                                      <${Chibi3DModel} champId=${unit.champId} cost=${unit.cost} star=${unit.star} size=${64} isEnemy=${unit.team === 'enemy'} />
                                     </div>
                                   </div>
-                                )}
+                                `}
                               </div>
-                            );
+                            `;
                           })}
                         </div>
-                      </React.Fragment>
-                    ))}
+                      </div>
+                    `)}
                   </div>
                 </div>
               </div>
 
-              {/* 9칸 대기석 (빈 슬롯 글씨 제거, 깔끔한 3D 독) */}
               <div className="w-full max-w-4xl mt-2 bg-slate-900/95 border-2 border-slate-700/90 rounded-2xl p-2 shadow-xl z-20">
                 <div className="grid grid-cols-9 gap-2">
-                  {benchUnits.map((u, idx) => {
+                  ${benchUnits.map((u, idx) => {
                     const isSel = selected && selected.from === 'bench' && selected.index === idx;
                     const st = u ? COST_STYLE[u.cost] : null;
-                    return (
+                    return html`
                       <div
-                        key={idx}
-                        onClick={() => {
+                        key=${idx}
+                        onClick=${() => {
                           if (phase !== 'PREP') return;
                           if (!selected && u) setSelected({ from: 'bench', index: idx, uid: u.uid });
                           else if (selected) moveUnit(selected, { type: 'bench', index: idx });
                         }}
-                        onDragOver={e => e.preventDefault()}
-                        onDrop={() => moveUnit(dragSource, { type: 'bench', index: idx })}
-                        className={`h-16 md:h-20 rounded-xl border-2 flex flex-col items-center justify-center cursor-pointer transition ${u ? `bg-gradient-to-b ${st.bg} ${st.border} hover:-translate-y-1` : 'bg-slate-950/75 border-slate-800/80 hover:border-slate-600'} ${isSel ? 'ring-4 ring-amber-400 scale-105' : ''}`}
+                        onDragOver=${e => e.preventDefault()}
+                        onDrop=${() => moveUnit(dragSource, { type: 'bench', index: idx })}
+                        className=${`h-16 md:h-20 rounded-xl border-2 flex flex-col items-center justify-center cursor-pointer transition ${u ? `bg-gradient-to-b ${st.bg} ${st.border} hover:-translate-y-1` : 'bg-slate-950/75 border-slate-800/80 hover:border-slate-600'} ${isSel ? 'ring-4 ring-amber-400 scale-105' : ''}`}
                       >
-                        {u && (
-                          <div draggable={phase === 'PREP'} onDragStart={() => setDragSource({ from: 'bench', index: idx, uid: u.uid })} className="flex flex-col items-center">
-                            <span className="text-[10px] font-black text-amber-300 leading-none">{'★'.repeat(u.star)}</span>
+                        ${u && html`
+                          <div draggable=${phase === 'PREP'} onDragStart=${() => setDragSource({ from: 'bench', index: idx, uid: u.uid })} className="flex flex-col items-center">
+                            <span className="text-[10px] font-black text-amber-300 leading-none">${'★'.repeat(u.star)}</span>
                             <div className="-my-2">
-                              <Chibi3DModel champId={u.champId} cost={u.cost} star={u.star} size={50} />
+                              <${Chibi3DModel} champId=${u.champId} cost=${u.cost} star=${u.star} size=${50} />
                             </div>
                           </div>
-                        )}
+                        `}
                       </div>
-                    );
+                    `;
                   })}
                 </div>
               </div>
             </main>
           </div>
 
-          {/* 하단 상점 독 (드래그 앤 드롭 판매 지원 + 비주얼 중심 상점 카드) */}
           <footer
-            onDragOver={e => e.preventDefault()}
-            onDrop={() => moveUnit(dragSource, { type: 'sell' })}
+            onDragOver=${e => e.preventDefault()}
+            onDrop=${() => moveUnit(dragSource, { type: 'sell' })}
             className="h-28 shrink-0 bg-slate-900 border-t-2 border-slate-700 px-4 py-2 flex items-center gap-3 z-30 shadow-2xl"
           >
             <div className="w-40 shrink-0 flex flex-col gap-1.5">
-              <button onClick={buyXp} disabled={phase !== 'PREP' || gold < 4} className="px-3 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:brightness-110 disabled:opacity-40 text-white font-black text-xs flex items-center justify-between shadow">
-                <span>⬆️ Lv.{level}</span>
+              <button onClick=${buyXp} disabled=${phase !== 'PREP' || gold < 4} className="px-3 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:brightness-110 disabled:opacity-40 text-white font-black text-xs flex items-center justify-between shadow">
+                <span>⬆️ Lv.${level}</span>
                 <span className="text-amber-300">4G</span>
               </button>
-              <button onClick={() => rollShop(2)} disabled={phase !== 'PREP' || gold < 2} className="px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 hover:brightness-110 disabled:opacity-40 text-slate-950 font-black text-xs flex items-center justify-between shadow">
+              <button onClick=${() => rollShop(2)} disabled=${phase !== 'PREP' || gold < 2} className="px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 hover:brightness-110 disabled:opacity-40 text-slate-950 font-black text-xs flex items-center justify-between shadow">
                 <span>🔄 리롤</span>
                 <span>2G</span>
               </button>
             </div>
 
             <div className="flex-1 grid grid-cols-5 gap-2.5 h-full">
-              {shop.map((card, idx) => {
-                if (!card || card.sold) return <div key={idx} className="rounded-xl bg-slate-950/50 border border-slate-800/60" />;
+              ${shop.map((card, idx) => {
+                if (!card || card.sold) return html`<div key=${idx} className="rounded-xl bg-slate-950/50 border border-slate-800/60" />`;
                 const st = COST_STYLE[card.cost];
                 const owned = boardUnits.filter(u => u.champId === card.id).length + benchUnits.filter(u => u && u.champId === card.id).length;
-                return (
-                  <div key={idx} onClick={() => buyCard(idx)} className={`relative rounded-xl bg-gradient-to-b ${st.bg} border-2 ${st.border} flex flex-col justify-between overflow-hidden cursor-pointer hover:-translate-y-1 transition shadow-lg`}>
+                return html`
+                  <div key=${idx} onClick=${() => buyCard(idx)} className=${`relative rounded-xl bg-gradient-to-b ${st.bg} border-2 ${st.border} flex flex-col justify-between overflow-hidden cursor-pointer hover:-translate-y-1 transition shadow-lg`}>
                     <div className="flex items-center justify-between px-2 pt-1.5 z-10">
                       <div className="flex gap-1">
-                        {card.traits.map(t => (
-                          <span key={t} className="text-xs bg-black/50 px-1 rounded">{SYNERGIES[t].icon}</span>
-                        ))}
+                        ${card.traits.map(t => html`<span key=${t} className="text-xs bg-black/50 px-1 rounded">${SYNERGIES[t].icon}</span>`)}
                       </div>
-                      {owned >= 2 && <span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[9px] animate-bounce">★2</span>}
+                      ${owned >= 2 && html`<span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[9px] animate-bounce">★2</span>`}
                     </div>
                     <div className="flex justify-center -my-3 pointer-events-none">
-                      <Chibi3DModel champId={card.id} cost={card.cost} star={1} size={64} />
+                      <${Chibi3DModel} champId=${card.id} cost=${card.cost} star=${1} size=${64} />
                     </div>
                     <div className="bg-black/75 px-2.5 py-1 flex items-center justify-between z-10">
-                      <span className="text-xs font-extrabold text-white truncate">{card.name}</span>
-                      <span className={`px-1.5 py-0.5 rounded font-black text-[10px] ${st.badge}`}>🪙{card.cost}</span>
+                      <span className="text-xs font-extrabold text-white truncate">${card.name}</span>
+                      <span className=${`px-1.5 py-0.5 rounded font-black text-[10px] ${st.badge}`}>🪙${card.cost}</span>
                     </div>
                   </div>
-                );
+                `;
               })}
             </div>
 
             <div
-              onClick={() => selected && moveUnit(selected, { type: 'sell' })}
-              className={`w-32 shrink-0 h-full rounded-xl border-2 flex flex-col justify-center items-center cursor-pointer transition ${selected ? 'bg-rose-950/90 border-rose-400 animate-pulse' : 'bg-slate-950 border-amber-500/50'}`}
+              onClick=${() => selected && moveUnit(selected, { type: 'sell' })}
+              className=${`w-32 shrink-0 h-full rounded-xl border-2 flex flex-col justify-center items-center cursor-pointer transition ${selected ? 'bg-rose-950/90 border-rose-400 animate-pulse' : 'bg-slate-950 border-amber-500/50'}`}
             >
-              {selected ? (
-                <>
+              ${selected ? html`
+                <div className="text-center">
                   <div className="text-xs font-black text-rose-300">🗑️ 판매하기</div>
                   <div className="text-[10px] text-rose-200 mt-0.5">클릭 또는 드롭</div>
-                </>
-              ) : (
-                <>
-                  <div className="text-2xl font-black text-amber-300">🪙 {gold}</div>
-                  <div className="text-[10px] font-bold text-emerald-400">이자 +{interestGold}G</div>
-                </>
-              )}
+                </div>
+              ` : html`
+                <div className="text-center">
+                  <div className="text-2xl font-black text-amber-300">🪙 ${gold}</div>
+                  <div className="text-[10px] font-bold text-emerald-400">이자 +${interestGold}G</div>
+                </div>
+              `}
             </div>
           </footer>
         </div>
-      );
+      `;
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    root.render(React.createElement(App));
   </script>
 </body>
 </html>
